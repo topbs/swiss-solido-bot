@@ -25,6 +25,15 @@ const client = new Client({
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-extensions',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
         ],
     },
 });
@@ -38,6 +47,14 @@ client.on('qr', (qr) => {
 
 client.on('authenticated', () => {
     console.log('[WhatsApp] Аутентификация успешна. Сессия сохранена.');
+});
+
+client.on('auth_failure', (msg) => {
+    console.error('[WhatsApp] Ошибка аутентификации:', msg);
+});
+
+client.on('loading_screen', (percent, message) => {
+    console.log(`[WhatsApp] Загрузка... ${percent}% — ${message}`);
 });
 
 client.on('ready', () => {
