@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, Browsers } = require('@whiskeysockets/baileys');
 const { Boom }    = require('@hapi/boom');
 const qrcode      = require('qrcode-terminal');
 const pino        = require('pino');
@@ -26,8 +26,9 @@ async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
 
     sock = makeWASocket({
-        auth:   state,
-        logger: pino({ level: 'silent' }),
+        auth:    state,
+        browser: Browsers.ubuntu('Chrome'),
+        logger:  pino({ level: 'warn' }),
     });
 
     sock.ev.on('creds.update', saveCreds);
