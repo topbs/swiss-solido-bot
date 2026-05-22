@@ -105,6 +105,6 @@ app.get('/status', (req, res) => {
     res.json({ ok: true, whatsapp_ready: isReady });
 });
 
-app.listen(PORT, '127.0.0.1', () => {
-    console.log(`[Server] Слушаю на http://127.0.0.1:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Server] Слушаю на http://0.0.0.0:${PORT}`);
 });
