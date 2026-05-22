@@ -108,12 +108,16 @@ app.post('/send', async (req, res) => {
         return res.status(503).json({ ok: false, error: 'WhatsApp client not ready yet' });
     }
 
-    // whatsapp-web.js принимает chatId вида "41791234567@c.us"
-    const chatId = phone.replace(/\D/g, '') + '@c.us';
+    const cleanPhone = phone.replace(/\D/g, '');
 
     try {
-        await client.sendMessage(chatId, message);
-        console.log(`[Send] → ${phone}: ${message.substring(0, 60)}…`);
+        // Получаем корректный ID с поддержкой LID
+        const numberId = await client.getNumberId(cleanPhone);
+        if (!numberId) {
+            return res.status(404).json({ ok: false, error: `Phone ${cleanPhone} not found on WhatsApp` });
+        }
+        await client.sendMessage(numberId._serialized, message);
+        console.log(`[Send] → ${cleanPhone}: ${message.substring(0, 60)}…`);
         res.json({ ok: true });
     } catch (err) {
         console.error('[Send] Ошибка:', err.message);
