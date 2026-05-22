@@ -19,6 +19,11 @@ if (!API_SECRET) {
 // ----------------------------------------------------------------
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
+    webVersion: '2.3000.1023141244-alpha',
+    webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1023141244-alpha.html',
+    },
     puppeteer: {
         headless: true,
         args: [
@@ -30,7 +35,6 @@ const client = new Client({
             '--disable-extensions',
             '--no-first-run',
             '--no-zygote',
-            '--single-process',
             '--disable-background-timer-throttling',
             '--disable-backgrounding-occluded-windows',
             '--disable-renderer-backgrounding',
