@@ -38,7 +38,7 @@ function ensureDataDir() {
 function loadState() {
     ensureDataDir();
     if (!fs.existsSync(DATA_FILE)) {
-        return { bindings: {}, chatToEmployee: {} };
+        return { bindings: {}, chatToEmployee: {}, last_update_id: 0 };
     }
 
     try {
@@ -47,10 +47,11 @@ function loadState() {
         return {
             bindings: parsed.bindings || {},
             chatToEmployee: parsed.chatToEmployee || {},
+            last_update_id: Number(parsed.last_update_id || 0),
         };
     } catch (err) {
         console.error('[State] Failed to load bindings file:', err.message);
-        return { bindings: {}, chatToEmployee: {} };
+        return { bindings: {}, chatToEmployee: {}, last_update_id: 0 };
     }
 }
 
@@ -62,6 +63,7 @@ function saveState() {
 }
 
 const state = loadState();
+updateOffset = Number(state.last_update_id || 0);
 
 function makeBindToken(employeeId) {
     if (!BIND_SECRET) {
@@ -135,13 +137,22 @@ function buildBindLink(employeeId) {
 
 function bindEmployeeToChat(employeeId, from) {
     const chatId = String(from.id);
-
+    const existingBindingForEmployee = state.bindings[employeeId];
     const existingEmployeeForChat = state.chatToEmployee[chatId];
+
+    const isAlreadyBound =
+        existingBindingForEmployee &&
+        String(existingBindingForEmployee.chat_id) === chatId &&
+        existingEmployeeForChat === employeeId;
+
+    if (isAlreadyBound) {
+        return false;
+    }
+
     if (existingEmployeeForChat && existingEmployeeForChat !== employeeId) {
         delete state.bindings[existingEmployeeForChat];
     }
 
-    const existingBindingForEmployee = state.bindings[employeeId];
     if (existingBindingForEmployee && existingBindingForEmployee.chat_id) {
         delete state.chatToEmployee[String(existingBindingForEmployee.chat_id)];
     }
@@ -155,6 +166,7 @@ function bindEmployeeToChat(employeeId, from) {
     };
     state.chatToEmployee[chatId] = employeeId;
     saveState();
+    return true;
 }
 
 async function tgRequest(method, params) {
@@ -225,12 +237,19 @@ async function handleIncomingMessage(message) {
             return;
         }
 
-        bindEmployeeToChat(check.employeeId, message.from);
-        await sendTelegramText(
-            message.chat.id,
-            `Готово! Telegram привязан к сотруднику #${check.employeeId}. Теперь вы будете получать уведомления здесь.`
-        );
-        console.log(`[Bind] employee_id=${check.employeeId} chat_id=${message.chat.id}`);
+        const isNewBinding = bindEmployeeToChat(check.employeeId, message.from);
+        if (isNewBinding) {
+            await sendTelegramText(
+                message.chat.id,
+                `Готово! Telegram привязан к сотруднику #${check.employeeId}. Теперь вы будете получать уведомления здесь.`
+            );
+            console.log(`[Bind] employee_id=${check.employeeId} chat_id=${message.chat.id}`);
+        } else {
+            await sendTelegramText(
+                message.chat.id,
+                `Этот Telegram уже привязан к сотруднику #${check.employeeId}. Уведомления приходят в этот чат.`
+            );
+        }
         return;
     }
 
@@ -260,6 +279,8 @@ async function pollTelegram() {
             isReady = true;
             for (const update of updates.result || []) {
                 updateOffset = update.update_id + 1;
+                state.last_update_id = updateOffset;
+                saveState();
                 await handleIncomingMessage(update.message);
             }
         } catch (err) {
