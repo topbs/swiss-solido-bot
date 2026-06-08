@@ -68,15 +68,15 @@ function makeBindToken(employeeId) {
         return null;
     }
 
-    const exp = Math.floor(Date.now() / 1000) + BIND_TTL_SECONDS;
-    const base = `${employeeId}.${exp}`;
+    const exp = (Math.floor(Date.now() / 1000) + BIND_TTL_SECONDS).toString(36);
+    const base = `${employeeId}-${exp}`;
     const sig = crypto
         .createHmac('sha256', BIND_SECRET)
         .update(base)
         .digest('base64url')
         .slice(0, 16);
 
-    return `${employeeId}.${exp}.${sig}`;
+    return `${employeeId}-${exp}-${sig}`;
 }
 
 function verifyBindToken(token) {
@@ -84,18 +84,18 @@ function verifyBindToken(token) {
         return { ok: false, error: 'invalid_or_missing_token' };
     }
 
-    const parts = token.split('.');
+    const parts = token.split('-');
     if (parts.length !== 3) {
         return { ok: false, error: 'bad_token_format' };
     }
 
     const [employeeIdRaw, expRaw, sigRaw] = parts;
-    if (!/^\d+$/.test(employeeIdRaw) || !/^\d+$/.test(expRaw) || !/^[A-Za-z0-9_-]{8,32}$/.test(sigRaw)) {
+    if (!/^\d+$/.test(employeeIdRaw) || !/^[0-9a-z]+$/.test(expRaw) || !/^[A-Za-z0-9_-]{8,32}$/.test(sigRaw)) {
         return { ok: false, error: 'bad_token_parts' };
     }
 
     const employeeId = String(Number(employeeIdRaw));
-    const exp = Number(expRaw);
+    const exp = parseInt(expRaw, 36);
     if (!employeeId || Number.isNaN(exp)) {
         return { ok: false, error: 'bad_token_values' };
     }
@@ -106,7 +106,7 @@ function verifyBindToken(token) {
 
     const expected = crypto
         .createHmac('sha256', BIND_SECRET)
-        .update(`${employeeId}.${exp}`)
+        .update(`${employeeId}-${expRaw}`)
         .digest('base64url')
         .slice(0, 16);
 
@@ -246,6 +246,9 @@ async function handleIncomingMessage(message) {
 }
 
 async function pollTelegram() {
+    // Ensure polling works even if a webhook was configured previously.
+    await tgRequest('deleteWebhook', { drop_pending_updates: false });
+
     while (true) {
         try {
             const updates = await tgRequest('getUpdates', {
