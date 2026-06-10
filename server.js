@@ -169,6 +169,23 @@ function bindEmployeeToChat(employeeId, from) {
     return true;
 }
 
+function getEmployeeDisplayName(employeeId, fallbackFrom) {
+    const binding = state.bindings[String(employeeId)] || {};
+    const firstName = String(binding.first_name || fallbackFrom?.first_name || '').trim();
+    const lastName = String(binding.last_name || fallbackFrom?.last_name || '').trim();
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    if (fullName) {
+        return fullName;
+    }
+
+    if (binding.username) {
+        return `@${binding.username}`;
+    }
+
+    return `сотрудник #${employeeId}`;
+}
+
 async function tgRequest(method, params) {
     if (!TELEGRAM_BOT_TOKEN) {
         throw new Error('TELEGRAM_BOT_TOKEN is not configured');
@@ -238,16 +255,17 @@ async function handleIncomingMessage(message) {
         }
 
         const isNewBinding = bindEmployeeToChat(check.employeeId, message.from);
+        const employeeName = getEmployeeDisplayName(check.employeeId, message.from);
         if (isNewBinding) {
             await sendTelegramText(
                 message.chat.id,
-                `Готово! Telegram привязан к сотруднику #${check.employeeId}. Теперь вы будете получать уведомления здесь.`
+                `Готово! Telegram привязан: ${employeeName}. Теперь вы будете получать уведомления здесь.`
             );
             console.log(`[Bind] employee_id=${check.employeeId} chat_id=${message.chat.id}`);
         } else {
             await sendTelegramText(
                 message.chat.id,
-                `Этот Telegram уже привязан к сотруднику #${check.employeeId}. Уведомления приходят в этот чат.`
+                `Этот Telegram уже привязан: ${employeeName}. Уведомления приходят в этот чат.`
             );
         }
         return;
@@ -255,7 +273,8 @@ async function handleIncomingMessage(message) {
 
     const employeeId = state.chatToEmployee[String(message.from.id)];
     if (employeeId) {
-        await sendTelegramText(message.chat.id, `Вы привязаны как сотрудник #${employeeId}.`);
+        const employeeName = getEmployeeDisplayName(employeeId, message.from);
+        await sendTelegramText(message.chat.id, `Вы привязаны как ${employeeName}.`);
     } else {
         await sendTelegramText(
             message.chat.id,
