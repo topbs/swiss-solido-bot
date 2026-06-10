@@ -38,7 +38,7 @@ function ensureDataDir() {
 function loadState() {
     ensureDataDir();
     if (!fs.existsSync(DATA_FILE)) {
-        return { bindings: {}, chatToEmployee: {}, last_update_id: 0 };
+        return { bindings: {}, chatToEmployee: {}, employeeProfiles: {}, last_update_id: 0 };
     }
 
     try {
@@ -47,11 +47,12 @@ function loadState() {
         return {
             bindings: parsed.bindings || {},
             chatToEmployee: parsed.chatToEmployee || {},
+            employeeProfiles: parsed.employeeProfiles || {},
             last_update_id: Number(parsed.last_update_id || 0),
         };
     } catch (err) {
         console.error('[State] Failed to load bindings file:', err.message);
-        return { bindings: {}, chatToEmployee: {}, last_update_id: 0 };
+        return { bindings: {}, chatToEmployee: {}, employeeProfiles: {}, last_update_id: 0 };
     }
 }
 
@@ -169,14 +170,43 @@ function bindEmployeeToChat(employeeId, from) {
     return true;
 }
 
+function saveEmployeeProfile(employeeId, profile) {
+    const id = String(employeeId || '').trim();
+    if (!id) {
+        return;
+    }
+
+    const firstName = String(profile?.first_name || '').trim();
+    const lastName = String(profile?.last_name || '').trim();
+    const displayName = String(profile?.display_name || '').trim();
+
+    if (!firstName && !lastName && !displayName) {
+        return;
+    }
+
+    const existing = state.employeeProfiles[id] || {};
+    state.employeeProfiles[id] = {
+        first_name: firstName || existing.first_name || null,
+        last_name: lastName || existing.last_name || null,
+        display_name: displayName || existing.display_name || null,
+        updated_at: new Date().toISOString(),
+    };
+    saveState();
+}
+
 function getEmployeeDisplayName(employeeId, fallbackFrom) {
+    const profile = state.employeeProfiles[String(employeeId)] || {};
     const binding = state.bindings[String(employeeId)] || {};
-    const firstName = String(binding.first_name || fallbackFrom?.first_name || '').trim();
-    const lastName = String(binding.last_name || fallbackFrom?.last_name || '').trim();
+    const firstName = String(profile.first_name || binding.first_name || fallbackFrom?.first_name || '').trim();
+    const lastName = String(profile.last_name || binding.last_name || fallbackFrom?.last_name || '').trim();
     const fullName = `${firstName} ${lastName}`.trim();
 
     if (fullName) {
         return fullName;
+    }
+
+    if (profile.display_name) {
+        return profile.display_name;
     }
 
     if (binding.username) {
@@ -339,10 +369,19 @@ app.use((req, res, next) => {
 app.post('/send', async (req, res) => {
     const employeeId = String(req.body?.employee_id || req.body?.employeeId || req.body?.user_id || '').trim();
     const message = req.body?.message;
+    const firstName = String(req.body?.first_name || '').trim();
+    const lastName = String(req.body?.last_name || '').trim();
+    const displayName = String(req.body?.display_name || req.body?.employee_name || '').trim();
 
     if (!employeeId || !message) {
         return res.status(400).json({ ok: false, error: 'employee_id and message are required' });
     }
+
+    saveEmployeeProfile(employeeId, {
+        first_name: firstName,
+        last_name: lastName,
+        display_name: displayName,
+    });
 
     const binding = state.bindings[employeeId];
     if (!binding || !binding.chat_id) {
@@ -372,9 +411,18 @@ app.post('/send', async (req, res) => {
  */
 app.post('/bind-link', (req, res) => {
     const employeeId = String(req.body?.employee_id || req.body?.employeeId || req.body?.user_id || '').trim();
+    const firstName = String(req.body?.first_name || '').trim();
+    const lastName = String(req.body?.last_name || '').trim();
+    const displayName = String(req.body?.display_name || req.body?.employee_name || '').trim();
     if (!employeeId) {
         return res.status(400).json({ ok: false, error: 'employee_id is required' });
     }
+
+    saveEmployeeProfile(employeeId, {
+        first_name: firstName,
+        last_name: lastName,
+        display_name: displayName,
+    });
 
     const bind = buildBindLink(employeeId);
     if (!bind) {
@@ -389,9 +437,18 @@ app.post('/bind-link', (req, res) => {
 
 app.get('/bind-link', (req, res) => {
     const employeeId = String(req.query?.employee_id || req.query?.employeeId || req.query?.user_id || '').trim();
+    const firstName = String(req.query?.first_name || '').trim();
+    const lastName = String(req.query?.last_name || '').trim();
+    const displayName = String(req.query?.display_name || req.query?.employee_name || '').trim();
     if (!employeeId) {
         return res.status(400).json({ ok: false, error: 'employee_id is required' });
     }
+
+    saveEmployeeProfile(employeeId, {
+        first_name: firstName,
+        last_name: lastName,
+        display_name: displayName,
+    });
 
     const bind = buildBindLink(employeeId);
     if (!bind) {
