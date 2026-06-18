@@ -15,6 +15,7 @@ const TELEGRAM_BOT_USERNAME = (process.env.TELEGRAM_BOT_USERNAME || '').replace(
 const BIND_SECRET = process.env.BIND_SECRET || API_SECRET;
 const BIND_TTL_SECONDS = Number(process.env.BIND_TTL_SECONDS || 60 * 60 * 24 * 30);
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data', 'telegram-bindings.json');
+const MAX_STORED_MESSAGES = Number(process.env.MAX_STORED_MESSAGES || 500);
 
 if (!API_SECRET) {
     console.warn('[WARN] API_SECRET not set. Requests to API will be accepted without auth.');
@@ -49,10 +50,11 @@ function loadState() {
             chatToEmployee: parsed.chatToEmployee || {},
             employeeProfiles: parsed.employeeProfiles || {},
             last_update_id: Number(parsed.last_update_id || 0),
+            messages: Array.isArray(parsed.messages) ? parsed.messages : [],
         };
     } catch (err) {
         console.error('[State] Failed to load bindings file:', err.message);
-        return { bindings: {}, chatToEmployee: {}, employeeProfiles: {}, last_update_id: 0 };
+        return { bindings: {}, chatToEmployee: {}, employeeProfiles: {}, last_update_id: 0, messages: [] };
     }
 }
 
@@ -304,7 +306,23 @@ async function handleIncomingMessage(message) {
     const employeeId = state.chatToEmployee[String(message.from.id)];
     if (employeeId) {
         const employeeName = getEmployeeDisplayName(employeeId, message.from);
-        await sendTelegramText(message.chat.id, `Вы привязаны как ${employeeName}.`);
+
+        // Store incoming message
+        if (!state.messages) state.messages = [];
+        state.messages.push({
+            employee_id: employeeId,
+            employee_name: employeeName,
+            telegram_username: message.from.username || null,
+            text: text,
+            date: new Date().toISOString(),
+        });
+        if (state.messages.length > MAX_STORED_MESSAGES) {
+            state.messages = state.messages.slice(state.messages.length - MAX_STORED_MESSAGES);
+        }
+        saveState();
+        console.log(`[Inbox] employee_id=${employeeId} (${employeeName}): ${text.substring(0, 80)}`);
+
+        await sendTelegramText(message.chat.id, 'Сообщение получено менеджером ✅');
     } else {
         await sendTelegramText(
             message.chat.id,
@@ -463,6 +481,39 @@ app.get('/bind-link', (req, res) => {
 
 app.get('/bindings', (req, res) => {
     res.json({ ok: true, bindings: state.bindings });
+});
+
+/**
+ * GET /messages
+ * Query: ?employee_id=123&limit=100
+ * Returns stored incoming messages from workers, newest last.
+ */
+app.get('/messages', (req, res) => {
+    const limitParam = parseInt(req.query?.limit || '100', 10);
+    const limit = Math.min(Math.max(1, isNaN(limitParam) ? 100 : limitParam), MAX_STORED_MESSAGES);
+    const employeeId = String(req.query?.employee_id || '').trim();
+
+    let messages = state.messages || [];
+    if (employeeId) {
+        messages = messages.filter((m) => String(m.employee_id) === employeeId);
+    }
+
+    res.json({ ok: true, messages: messages.slice(-limit), total: messages.length });
+});
+
+/**
+ * DELETE /messages
+ * Body: { employee_id: 123 } — clear messages for one employee, or all if omitted.
+ */
+app.delete('/messages', (req, res) => {
+    const employeeId = String(req.body?.employee_id || '').trim();
+    if (employeeId) {
+        state.messages = (state.messages || []).filter((m) => String(m.employee_id) !== employeeId);
+    } else {
+        state.messages = [];
+    }
+    saveState();
+    res.json({ ok: true });
 });
 
 // Health check
